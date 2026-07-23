@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Cropper, { type Area, type Point, type Size } from "react-easy-crop";
 import ReactCrop, {
+  convertToPercentCrop,
   type PercentCrop,
   type PixelCrop,
 } from "react-image-crop";
@@ -15,6 +15,7 @@ import {
   uniqueOutputNames,
   type BatchSettings,
   type CropMode,
+  type ImageArea,
   type SettingsOverrides,
 } from "./batch";
 
@@ -37,10 +38,8 @@ type BatchItem = {
   sourceUrl: string;
   width: number;
   height: number;
-  crop: Point;
-  zoom: number;
-  freeCrop: PercentCrop;
-  croppedArea: Area | null;
+  crop: PercentCrop;
+  croppedArea: ImageArea | null;
   outputBlob: Blob | null;
   outputUrl: string;
   status: ItemStatus;
@@ -70,7 +69,22 @@ function loadImage(src: string) {
   });
 }
 
-function getOutputSize(size: number, mode: CropMode, crop: Area | null): Size {
+function defaultPercentCrop(
+  width: number,
+  height: number,
+  mode: CropMode,
+): PercentCrop {
+  const crop = defaultCrop(width, height, mode);
+  return crop
+    ? convertToPercentCrop({ ...crop, unit: "px" }, width, height)
+    : { ...DEFAULT_FREE_CROP };
+}
+
+function getOutputSize(
+  size: number,
+  mode: CropMode,
+  crop: ImageArea | null,
+) {
   if (mode !== "free" || !crop) return { width: size, height: size };
 
   const scale = size / Math.max(crop.width, crop.height);
@@ -82,7 +96,7 @@ function getOutputSize(size: number, mode: CropMode, crop: Area | null): Size {
 
 async function renderWebp(
   imageSrc: string,
-  crop: Area | null,
+  crop: ImageArea | null,
   requestedSize: number,
   quality: number,
   mode: CropMode,
@@ -164,7 +178,6 @@ export default function Home() {
     "batch",
   );
   const [settingsChange, setSettingsChange] = useState(0);
-  const [cropSize, setCropSize] = useState<Size | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
@@ -174,7 +187,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const itemsRef = useRef<BatchItem[]>([]);
   const revisionRef = useRef(0);
-  const freeImageRef = useRef<HTMLImageElement>(null);
+  const cropImageRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -277,12 +290,10 @@ export default function Home() {
               field === "cropMode"
                 ? defaultCrop(item.width, item.height, nextMode)
                 : item.croppedArea,
-            crop: field === "cropMode" ? { x: 0, y: 0 } : item.crop,
-            zoom: field === "cropMode" ? 1 : item.zoom,
-            freeCrop:
+            crop:
               field === "cropMode"
-                ? { ...DEFAULT_FREE_CROP }
-                : item.freeCrop,
+                ? defaultPercentCrop(item.width, item.height, nextMode)
+                : item.crop,
             status: field === "cropMode" ? "queued" : "waiting",
             error: "",
             revision,
@@ -307,14 +318,8 @@ export default function Home() {
               overrides: {},
               crop:
                 item.overrides.cropMode !== undefined
-                  ? { x: 0, y: 0 }
+                  ? defaultPercentCrop(item.width, item.height, cropMode)
                   : item.crop,
-              zoom:
-                item.overrides.cropMode !== undefined ? 1 : item.zoom,
-              freeCrop:
-                item.overrides.cropMode !== undefined
-                  ? { ...DEFAULT_FREE_CROP }
-                  : item.freeCrop,
               croppedArea:
                 item.overrides.cropMode !== undefined
                   ? defaultCrop(item.width, item.height, cropMode)
@@ -355,9 +360,7 @@ export default function Home() {
           sourceUrl: "",
           width: 0,
           height: 0,
-          crop: { x: 0, y: 0 },
-          zoom: 1,
-          freeCrop: { ...DEFAULT_FREE_CROP },
+          crop: { ...DEFAULT_FREE_CROP },
           croppedArea: null,
           outputBlob: null,
           outputUrl: "",
@@ -401,6 +404,11 @@ export default function Home() {
             sourceUrl: nextUrl,
             width: image.naturalWidth,
             height: image.naturalHeight,
+            crop: defaultPercentCrop(
+              image.naturalWidth,
+              image.naturalHeight,
+              cropMode,
+            ),
             croppedArea: defaultCrop(
               image.naturalWidth,
               image.naturalHeight,
@@ -524,7 +532,7 @@ export default function Home() {
   );
 
   const queueActiveCrop = useCallback(
-    (area: Area) => {
+    (area: ImageArea) => {
       if (!activeId) return;
       const revision = ++revisionRef.current;
       setItems((current) =>
@@ -545,13 +553,8 @@ export default function Home() {
   );
 
   const onCropComplete = useCallback(
-    (_: Area, areaPixels: Area) => queueActiveCrop(areaPixels),
-    [queueActiveCrop],
-  );
-
-  const onFreeCropComplete = useCallback(
     (nextCrop: PixelCrop) => {
-      const image = freeImageRef.current;
+      const image = cropImageRef.current;
       if (!image || !nextCrop.width || !nextCrop.height) return;
 
       const scaleX = image.naturalWidth / image.width;
@@ -566,9 +569,9 @@ export default function Home() {
     [queueActiveCrop],
   );
 
-  const initializeFreeCrop = useCallback(
+  const initializeCrop = useCallback(
     (image: HTMLImageElement) => {
-      const nextCrop = activeItem?.freeCrop ?? DEFAULT_FREE_CROP;
+      const nextCrop = activeItem?.crop ?? DEFAULT_FREE_CROP;
       queueActiveCrop({
         x: Math.round((image.naturalWidth * nextCrop.x) / 100),
         y: Math.round((image.naturalHeight * nextCrop.y) / 100),
@@ -576,7 +579,7 @@ export default function Home() {
         height: Math.round((image.naturalHeight * nextCrop.height) / 100),
       });
     },
-    [activeItem?.freeCrop, queueActiveCrop],
+    [activeItem?.crop, queueActiveCrop],
   );
 
   const resetActiveFrame = useCallback(() => {
@@ -587,9 +590,11 @@ export default function Home() {
         item.id === activeItem.id
           ? {
               ...item,
-              crop: { x: 0, y: 0 },
-              zoom: 1,
-              freeCrop: { ...DEFAULT_FREE_CROP },
+              crop: defaultPercentCrop(
+                item.width,
+                item.height,
+                activeSettings.cropMode,
+              ),
               croppedArea: defaultCrop(
                 item.width,
                 item.height,
@@ -608,7 +613,6 @@ export default function Home() {
     (mode: CropMode) => {
       if (mode === visibleSettings.cropMode) return;
       const revision = ++revisionRef.current;
-      setCropSize(null);
 
       if (itemScope && activeItem?.sourceUrl) {
         setItems((current) =>
@@ -621,9 +625,7 @@ export default function Home() {
             return {
               ...item,
               overrides,
-              crop: { x: 0, y: 0 },
-              zoom: 1,
-              freeCrop: { ...DEFAULT_FREE_CROP },
+              crop: defaultPercentCrop(item.width, item.height, mode),
               croppedArea: defaultCrop(item.width, item.height, mode),
               status: "queued",
               error: "",
@@ -640,9 +642,7 @@ export default function Home() {
           item.sourceUrl && item.overrides.cropMode === undefined
             ? {
                 ...item,
-                crop: { x: 0, y: 0 },
-                zoom: 1,
-                freeCrop: { ...DEFAULT_FREE_CROP },
+                crop: defaultPercentCrop(item.width, item.height, mode),
                 croppedArea: defaultCrop(item.width, item.height, mode),
                 status: "queued",
                 error: "",
@@ -902,24 +902,33 @@ export default function Home() {
                         !showOriginal &&
                         <span>WebP · {activeSettings.quality}%</span>}
                     </div>
-                  ) : activeSettings.cropMode === "free" ? (
-                    <div className="free-crop-preview">
+                  ) : (
+                    <div className="crop-preview">
                       <ReactCrop
-                        crop={activeItem.freeCrop}
+                        key={`${activeItem.id}-${activeSettings.cropMode}`}
+                        crop={activeItem.crop}
+                        aspect={
+                          activeSettings.cropMode === "free" ? undefined : 1
+                        }
+                        circularCrop={activeSettings.cropMode === "round"}
                         keepSelection
                         minWidth={40}
                         minHeight={40}
                         onChange={(_, percentCrop) =>
-                          updateActive({ freeCrop: percentCrop })
+                          updateActive({ crop: percentCrop })
                         }
-                        onComplete={onFreeCropComplete}
+                        onComplete={onCropComplete}
                         onDragStart={() => setInteracting(true)}
                         onDragEnd={() => setInteracting(false)}
                         renderSelectionAddon={() =>
                           activeItem.outputUrl &&
                           activeItem.status === "ready" ? (
                             <div
-                              className={`free-webp-overlay ${
+                              className={`crop-webp-overlay ${
+                                activeSettings.cropMode === "round"
+                                  ? "is-round"
+                                  : ""
+                              } ${
                                 interacting ||
                                 showOriginal ||
                                 activeExporting
@@ -937,59 +946,13 @@ export default function Home() {
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          ref={freeImageRef}
+                          ref={cropImageRef}
                           src={activeItem.sourceUrl}
-                          alt="Изображение со свободной рамкой кадрирования"
-                          onLoad={(event) =>
-                            initializeFreeCrop(event.currentTarget)
-                          }
+                          alt="Изображение с рамкой кадрирования"
+                          onLoad={(event) => initializeCrop(event.currentTarget)}
                         />
                       </ReactCrop>
                     </div>
-                  ) : (
-                    <>
-                      <Cropper
-                        key={`${activeItem.id}-${activeSettings.cropMode}`}
-                        image={activeItem.sourceUrl}
-                        crop={activeItem.crop}
-                        zoom={activeItem.zoom}
-                        aspect={1}
-                        cropShape={
-                          activeSettings.cropMode === "round" ? "round" : "rect"
-                        }
-                        showGrid={false}
-                        onCropChange={(crop) => updateActive({ crop })}
-                        onZoomChange={(zoom) => updateActive({ zoom })}
-                        onCropComplete={onCropComplete}
-                        onCropSizeChange={setCropSize}
-                        onInteractionStart={() => setInteracting(true)}
-                        onInteractionEnd={() => setInteracting(false)}
-                      />
-                      {activeItem.outputUrl &&
-                        activeItem.status === "ready" &&
-                        cropSize && (
-                        <div
-                          className={`webp-overlay ${
-                            activeSettings.cropMode === "round"
-                              ? "is-round"
-                              : ""
-                          } ${
-                            interacting || showOriginal || activeExporting
-                              ? "is-hidden"
-                              : ""
-                          }`}
-                          style={{
-                            width: cropSize.width,
-                            height: cropSize.height,
-                          }}
-                          aria-hidden="true"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={activeItem.outputUrl} alt="" />
-                          <span>WebP · {activeSettings.quality}%</span>
-                        </div>
-                        )}
-                    </>
                   )}
                 </div>
               ) : (
@@ -1015,7 +978,7 @@ export default function Home() {
                         ? "Тяните углы или стороны рамки"
                         : activeSettings.cropMode === "none"
                           ? "Изображение экспортируется целиком"
-                          : `Перетаскивайте фото внутри ${
+                          : `Перемещайте и меняйте размер ${
                               activeSettings.cropMode === "round"
                                 ? "круга"
                                 : "квадрата"
@@ -1060,10 +1023,7 @@ export default function Home() {
                       <button
                         className="file-select"
                         type="button"
-                        onClick={() => {
-                          setActiveId(item.id);
-                          setCropSize(null);
-                        }}
+                        onClick={() => setActiveId(item.id)}
                         aria-label={`${item.file.name}: ${statusLabel(item)}`}
                         title={item.file.name}
                       >
@@ -1200,27 +1160,6 @@ export default function Home() {
                 ))}
               </div>
             </div>
-
-            {activeSettings.cropMode !== "none" &&
-              activeSettings.cropMode !== "free" && (
-              <label className="control">
-                <span>
-                  Масштаб кадра{" "}
-                  <b>{activeItem?.zoom.toFixed(1) ?? "1.0"}×</b>
-                </span>
-                <input
-                  type="range"
-                  min="1"
-                  max="3"
-                  step="0.05"
-                  disabled={!activeItem?.sourceUrl}
-                  value={activeItem?.zoom ?? 1}
-                  onChange={(event) =>
-                    updateActive({ zoom: Number(event.target.value) })
-                  }
-                />
-              </label>
-            )}
 
             <div className="control">
               <span>

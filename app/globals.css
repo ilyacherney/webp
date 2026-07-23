@@ -262,37 +262,35 @@ h1 {
   background-size: 16px 16px;
 }
 
-.reactEasyCrop_CropArea {
-  border: 2px solid white !important;
-  box-shadow: 0 0 0 9999em rgb(0 0 0 / 57%) !important;
-}
-
-.free-crop-preview {
+.crop-preview {
   position: absolute;
   inset: 0;
   padding: 28px;
   display: grid;
   place-items: center;
   overflow: hidden;
+  container-type: size;
 }
 
-.free-crop-preview .ReactCrop {
-  max-height: 100%;
+.crop-preview .ReactCrop {
+  max-width: 100cqw;
+  max-height: 100cqh;
   --rc-drag-handle-bg-colour: var(--accent);
   --rc-focus-color: var(--accent);
 }
 
-.free-crop-preview img {
-  max-height: 100%;
+.crop-preview .ReactCrop__child-wrapper,
+.crop-preview .ReactCrop__child-wrapper > img {
+  max-height: 100cqh;
 }
 
-.free-crop-preview .ReactCrop__selection-addon {
+.crop-preview .ReactCrop__selection-addon {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.free-webp-overlay {
+.crop-webp-overlay {
   width: 100%;
   height: 100%;
   position: relative;
@@ -300,57 +298,21 @@ h1 {
   transition: opacity 120ms ease;
 }
 
-.free-webp-overlay.is-hidden {
+.crop-webp-overlay.is-round {
+  border-radius: 50%;
+}
+
+.crop-webp-overlay.is-hidden {
   opacity: 0;
 }
 
-.free-webp-overlay img {
+.crop-webp-overlay img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.webp-overlay {
-  position: absolute;
-  z-index: 2;
-  top: 50%;
-  left: 50%;
-  overflow: hidden;
-  border: 2px solid white;
-  border-radius: 0;
-  background:
-    linear-gradient(45deg, #ddd8cc 25%, transparent 25%),
-    linear-gradient(-45deg, #ddd8cc 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #ddd8cc 75%),
-    linear-gradient(-45deg, transparent 75%, #ddd8cc 75%),
-    #f6f3eb;
-  background-position:
-    0 0,
-    0 8px,
-    8px -8px,
-    -8px 0;
-  background-size: 16px 16px;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  transition: opacity 120ms ease;
-}
-
-.webp-overlay.is-round {
-  border-radius: 50%;
-}
-
-.webp-overlay.is-hidden {
-  opacity: 0;
-}
-
-.webp-overlay img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.webp-overlay span,
-.free-webp-overlay span {
+.crop-webp-overlay span {
   position: absolute;
   bottom: 18px;
   left: 50%;
@@ -370,6 +332,7 @@ h1 {
   padding: 28px;
   display: grid;
   place-items: center;
+  container-type: size;
 }
 
 .uncropped-preview {
@@ -382,8 +345,8 @@ h1 {
 }
 
 .uncropped-preview img {
-  max-width: 100%;
-  max-height: 474px;
+  max-width: 100cqw;
+  max-height: 100cqh;
   object-fit: contain;
 }
 
@@ -916,15 +879,6 @@ footer {
   .uncropped-preview {
     height: 100%;
     min-height: 0;
-  }
-
-  .uncropped-preview img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    max-width: none;
-    max-height: none;
   }
 
   .editor-hint {

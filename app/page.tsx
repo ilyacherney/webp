@@ -61,6 +61,10 @@ function outputName(name: string, mode: CropMode) {
   return `${base}${suffix}.webp`;
 }
 
+function newItemId() {
+  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
@@ -340,7 +344,7 @@ export default function Home() {
           extension === "heic" ||
           extension === "heif";
         const baseItem = {
-          id: crypto.randomUUID(),
+          id: newItemId(),
           file,
           sourceUrl: "",
           width: 0,

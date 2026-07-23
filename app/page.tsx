@@ -412,6 +412,22 @@ export default function Home() {
                       onComplete={onFreeCropComplete}
                       onDragStart={() => setInteracting(true)}
                       onDragEnd={() => setInteracting(false)}
+                      renderSelectionAddon={() =>
+                        outputUrl ? (
+                          <div
+                            className={`free-webp-overlay ${
+                              interacting || showOriginal || exporting
+                                ? "is-hidden"
+                                : ""
+                            }`}
+                            aria-hidden="true"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={outputUrl} alt="" />
+                            <span>WebP · {quality}%</span>
+                          </div>
+                        ) : null
+                      }
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -466,7 +482,9 @@ export default function Home() {
                   {exporting
                     ? "Обновляем WebP…"
                     : cropMode === "free"
-                      ? "Тяните углы или стороны рамки"
+                      ? outputUrl
+                        ? "Готовый WebP показан внутри рамки"
+                        : "Тяните углы или стороны рамки"
                     : outputUrl
                       ? "Показан готовый WebP"
                       : cropMode === "none"
@@ -476,24 +494,22 @@ export default function Home() {
                           }`}
                 </span>
                 <div>
-                  {cropMode !== "free" && (
-                    <button
-                      type="button"
-                      onPointerDown={() => setShowOriginal(true)}
-                      onPointerUp={() => setShowOriginal(false)}
-                      onPointerCancel={() => setShowOriginal(false)}
-                      onPointerLeave={() => setShowOriginal(false)}
-                      onKeyDown={(event) => {
-                        if (event.key === " " || event.key === "Enter") {
-                          setShowOriginal(true);
-                        }
-                      }}
-                      onKeyUp={() => setShowOriginal(false)}
-                      onBlur={() => setShowOriginal(false)}
-                    >
-                      Зажмите: исходник
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onPointerDown={() => setShowOriginal(true)}
+                    onPointerUp={() => setShowOriginal(false)}
+                    onPointerCancel={() => setShowOriginal(false)}
+                    onPointerLeave={() => setShowOriginal(false)}
+                    onKeyDown={(event) => {
+                      if (event.key === " " || event.key === "Enter") {
+                        setShowOriginal(true);
+                      }
+                    }}
+                    onKeyUp={() => setShowOriginal(false)}
+                    onBlur={() => setShowOriginal(false)}
+                  >
+                    Зажмите: исходник
+                  </button>
                   {cropMode !== "none" && (
                     <button
                       type="button"
@@ -606,14 +622,6 @@ export default function Home() {
               </label>
 
               <div className="result">
-                <div className="result-preview">
-                  {outputUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={outputUrl} alt="Готовый WebP" />
-                  ) : (
-                    <span />
-                  )}
-                </div>
                 <div>
                   <span>Готовый WebP</span>
                   <strong>

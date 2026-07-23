@@ -5,6 +5,7 @@ import {
   effectiveSettings,
   imageCountLabel,
   nextQueuedId,
+  outputDimensions,
   uniqueOutputNames,
 } from "./batch.ts";
 
@@ -20,6 +21,23 @@ test("batch helpers keep crops centered, names unique, and active work first", (
     y: 100,
     width: 640,
     height: 800,
+  });
+  assert.deepEqual(outputDimensions(3000, 2000, 0, "none", null), {
+    width: 3000,
+    height: 2000,
+  });
+  assert.deepEqual(
+    outputDimensions(3000, 2000, 0, "free", {
+      x: 300,
+      y: 200,
+      width: 1800,
+      height: 1200,
+    }),
+    { width: 1800, height: 1200 },
+  );
+  assert.deepEqual(outputDimensions(3000, 2000, 1024, "none", null), {
+    width: 1024,
+    height: 683,
   });
   assert.deepEqual(uniqueOutputNames(["photo.webp", "photo.webp", "photo-2.webp"]), [
     "photo.webp",
@@ -49,9 +67,9 @@ test("batch helpers keep crops centered, names unique, and active work first", (
   );
   assert.deepEqual(
     effectiveSettings(
-      { cropMode: "none", quality: 82, outputSize: 1024 },
+      { cropMode: "none", quality: 82, outputSize: 0 },
       { cropMode: "square", quality: 92 },
     ),
-    { cropMode: "square", quality: 92, outputSize: 1024 },
+    { cropMode: "square", quality: 92, outputSize: 0 },
   );
 });

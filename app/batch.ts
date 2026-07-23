@@ -40,6 +40,31 @@ export function defaultCrop(
   };
 }
 
+export function outputDimensions(
+  sourceWidth: number,
+  sourceHeight: number,
+  requestedSize: number,
+  mode: CropMode,
+  crop: ImageArea | null,
+) {
+  const area =
+    mode === "none" ? { width: sourceWidth, height: sourceHeight } : crop;
+  if (!area) {
+    return {
+      width: Math.max(1, requestedSize),
+      height: Math.max(1, requestedSize),
+    };
+  }
+
+  const maxSize = requestedSize || Math.max(area.width, area.height);
+  const scale = maxSize / Math.max(area.width, area.height);
+
+  return {
+    width: Math.max(1, Math.round(area.width * scale)),
+    height: Math.max(1, Math.round(area.height * scale)),
+  };
+}
+
 export function uniqueOutputNames(names: readonly string[]) {
   const used = new Set<string>();
 

@@ -12,6 +12,7 @@ import {
   effectiveSettings,
   imageCountLabel,
   nextQueuedId,
+  outputDimensions,
   uniqueOutputNames,
   type BatchSettings,
   type CropMode,
@@ -21,7 +22,7 @@ import {
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const MAX_FILES = 30;
-const OUTPUT_SIZES = [256, 512, 1024, 2048];
+const OUTPUT_SIZES = [0, 256, 512, 1024, 2048];
 const DEFAULT_FREE_CROP: PercentCrop = {
   unit: "%",
   x: 10,
@@ -80,20 +81,6 @@ function defaultPercentCrop(
     : { ...DEFAULT_FREE_CROP };
 }
 
-function getOutputSize(
-  size: number,
-  mode: CropMode,
-  crop: ImageArea | null,
-) {
-  if (mode !== "free" || !crop) return { width: size, height: size };
-
-  const scale = size / Math.max(crop.width, crop.height);
-  return {
-    width: Math.max(1, Math.round(crop.width * scale)),
-    height: Math.max(1, Math.round(crop.height * scale)),
-  };
-}
-
 async function renderWebp(
   imageSrc: string,
   crop: ImageArea | null,
@@ -104,17 +91,15 @@ async function renderWebp(
   const image = await loadImage(imageSrc);
   const canvas = document.createElement("canvas");
   const isUncropped = mode === "none";
-
-  if (isUncropped) {
-    const scale =
-      requestedSize / Math.max(image.naturalWidth, image.naturalHeight);
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-  } else {
-    const outputSize = getOutputSize(requestedSize, mode, crop);
-    canvas.width = outputSize.width;
-    canvas.height = outputSize.height;
-  }
+  const outputSize = outputDimensions(
+    image.naturalWidth,
+    image.naturalHeight,
+    requestedSize,
+    mode,
+    crop,
+  );
+  canvas.width = outputSize.width;
+  canvas.height = outputSize.height;
 
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Canvas недоступен в этом браузере");
@@ -122,9 +107,9 @@ async function renderWebp(
   if (mode === "round") {
     context.beginPath();
     context.arc(
-      requestedSize / 2,
-      requestedSize / 2,
-      requestedSize / 2,
+      canvas.width / 2,
+      canvas.height / 2,
+      Math.min(canvas.width, canvas.height) / 2,
       0,
       Math.PI * 2,
     );
@@ -173,7 +158,7 @@ export default function Home() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [cropMode, setCropMode] = useState<CropMode>("none");
   const [quality, setQuality] = useState(82);
-  const [outputSize, setOutputSize] = useState(1024);
+  const [outputSize, setOutputSize] = useState(0);
   const [settingsScope, setSettingsScope] = useState<"batch" | "item">(
     "batch",
   );
@@ -1229,10 +1214,20 @@ export default function Home() {
               >
                 {OUTPUT_SIZES.map((size) => (
                   <option key={size} value={size}>
-                    {visibleSettings.cropMode === "none"
+                    {size === 0
+                      ? "Оставить исходный размер"
+                      : visibleSettings.cropMode === "none"
                       ? `${size} px`
-                      : `${getOutputSize(size, visibleSettings.cropMode, activeItem?.croppedArea ?? null).width} × ${
-                          getOutputSize(
+                      : `${outputDimensions(
+                          activeItem?.width ?? size,
+                          activeItem?.height ?? size,
+                          size,
+                          visibleSettings.cropMode,
+                          activeItem?.croppedArea ?? null,
+                        ).width} × ${
+                          outputDimensions(
+                            activeItem?.width ?? size,
+                            activeItem?.height ?? size,
                             size,
                             visibleSettings.cropMode,
                             activeItem?.croppedArea ?? null,

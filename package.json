@@ -13,6 +13,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-easy-crop": "^5.0.0",
+    "react-image-crop": "^11.1.2",
     "tailwindcss": "^4.0.0"
   },
   "devDependencies": {

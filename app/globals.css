@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "react-image-crop/dist/ReactCrop.css";
 
 :root {
   --ink: #171713;
@@ -248,6 +249,25 @@ h1 {
 .reactEasyCrop_CropArea {
   border: 2px solid white !important;
   box-shadow: 0 0 0 9999em rgb(0 0 0 / 57%) !important;
+}
+
+.free-crop-preview {
+  position: absolute;
+  inset: 0;
+  padding: 28px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.free-crop-preview .ReactCrop {
+  max-height: 100%;
+  --rc-drag-handle-bg-colour: var(--accent);
+  --rc-focus-color: var(--accent);
+}
+
+.free-crop-preview img {
+  max-height: 100%;
 }
 
 .webp-overlay {

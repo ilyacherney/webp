@@ -3,10 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Cropper, { type Area, type Point, type Size } from "react-easy-crop";
+import ReactCrop, {
+  type PercentCrop,
+  type PixelCrop,
+} from "react-image-crop";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const OUTPUT_SIZES = [256, 512, 1024, 2048];
-type CropMode = "none" | "square" | "round";
+const DEFAULT_FREE_CROP: PercentCrop = {
+  unit: "%",
+  x: 10,
+  y: 10,
+  width: 80,
+  height: 80,
+};
+type CropMode = "none" | "square" | "round" | "free";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} Б`;
@@ -29,6 +40,16 @@ function loadImage(src: string) {
   });
 }
 
+function getOutputSize(size: number, mode: CropMode, crop: Area | null): Size {
+  if (mode !== "free" || !crop) return { width: size, height: size };
+
+  const scale = size / Math.max(crop.width, crop.height);
+  return {
+    width: Math.max(1, Math.round(crop.width * scale)),
+    height: Math.max(1, Math.round(crop.height * scale)),
+  };
+}
+
 async function renderWebp(
   imageSrc: string,
   crop: Area | null,
@@ -46,8 +67,9 @@ async function renderWebp(
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
   } else {
-    canvas.width = requestedSize;
-    canvas.height = requestedSize;
+    const outputSize = getOutputSize(requestedSize, mode, crop);
+    canvas.width = outputSize.width;
+    canvas.height = outputSize.height;
   }
 
   const context = canvas.getContext("2d");
@@ -77,8 +99,8 @@ async function renderWebp(
       crop.height,
       0,
       0,
-      requestedSize,
-      requestedSize,
+      canvas.width,
+      canvas.height,
     );
   }
 
@@ -100,6 +122,8 @@ export default function Home() {
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedArea, setCroppedArea] = useState<Area | null>(null);
+  const [freeCrop, setFreeCrop] =
+    useState<PercentCrop>(DEFAULT_FREE_CROP);
   const [cropMode, setCropMode] = useState<CropMode>("none");
   const [quality, setQuality] = useState(82);
   const [outputSize, setOutputSize] = useState(1024);
@@ -114,6 +138,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const sourceUrlRef = useRef("");
   const outputUrlRef = useRef("");
+  const freeImageRef = useRef<HTMLImageElement>(null);
 
   const releaseUrls = useCallback(() => {
     if (sourceUrlRef.current) URL.revokeObjectURL(sourceUrlRef.current);
@@ -127,6 +152,7 @@ export default function Home() {
   const resetFrame = useCallback(() => {
     setCrop({ x: 0, y: 0 });
     setZoom(1);
+    setFreeCrop(DEFAULT_FREE_CROP);
   }, []);
 
   const openFile = useCallback(
@@ -198,6 +224,41 @@ export default function Home() {
     },
     [],
   );
+
+  const onFreeCropComplete = useCallback((nextCrop: PixelCrop) => {
+    const image = freeImageRef.current;
+    if (!image || !nextCrop.width || !nextCrop.height) return;
+
+    const scaleX = image.naturalWidth / image.width;
+    const scaleY = image.naturalHeight / image.height;
+    setExporting(true);
+    setCroppedArea({
+      x: Math.round(nextCrop.x * scaleX),
+      y: Math.round(nextCrop.y * scaleY),
+      width: Math.round(nextCrop.width * scaleX),
+      height: Math.round(nextCrop.height * scaleY),
+    });
+  }, []);
+
+  const initializeFreeCrop = useCallback(
+    (image: HTMLImageElement, nextCrop = freeCrop) => {
+      setExporting(true);
+      setCroppedArea({
+        x: Math.round((image.naturalWidth * nextCrop.x) / 100),
+        y: Math.round((image.naturalHeight * nextCrop.y) / 100),
+        width: Math.round((image.naturalWidth * nextCrop.width) / 100),
+        height: Math.round((image.naturalHeight * nextCrop.height) / 100),
+      });
+    },
+    [freeCrop],
+  );
+
+  const resetFreeFrame = useCallback(() => {
+    setFreeCrop(DEFAULT_FREE_CROP);
+    if (freeImageRef.current) {
+      initializeFreeCrop(freeImageRef.current, DEFAULT_FREE_CROP);
+    }
+  }, [initializeFreeCrop]);
 
   useEffect(() => {
     if (!imageSrc || (cropMode !== "none" && !croppedArea)) return;
@@ -340,6 +401,29 @@ export default function Home() {
                       <span>WebP · {quality}%</span>
                     )}
                   </div>
+                ) : cropMode === "free" ? (
+                  <div className="free-crop-preview">
+                    <ReactCrop
+                      crop={freeCrop}
+                      keepSelection
+                      minWidth={40}
+                      minHeight={40}
+                      onChange={(_, percentCrop) => setFreeCrop(percentCrop)}
+                      onComplete={onFreeCropComplete}
+                      onDragStart={() => setInteracting(true)}
+                      onDragEnd={() => setInteracting(false)}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        ref={freeImageRef}
+                        src={imageSrc}
+                        alt="Изображение со свободной рамкой кадрирования"
+                        onLoad={(event) =>
+                          initializeFreeCrop(event.currentTarget)
+                        }
+                      />
+                    </ReactCrop>
+                  </div>
                 ) : (
                   <>
                     <Cropper
@@ -381,6 +465,8 @@ export default function Home() {
                 <span>
                   {exporting
                     ? "Обновляем WebP…"
+                    : cropMode === "free"
+                      ? "Тяните углы или стороны рамки"
                     : outputUrl
                       ? "Показан готовый WebP"
                       : cropMode === "none"
@@ -390,24 +476,31 @@ export default function Home() {
                           }`}
                 </span>
                 <div>
-                  <button
-                    type="button"
-                    onPointerDown={() => setShowOriginal(true)}
-                    onPointerUp={() => setShowOriginal(false)}
-                    onPointerCancel={() => setShowOriginal(false)}
-                    onPointerLeave={() => setShowOriginal(false)}
-                    onKeyDown={(event) => {
-                      if (event.key === " " || event.key === "Enter") {
-                        setShowOriginal(true);
-                      }
-                    }}
-                    onKeyUp={() => setShowOriginal(false)}
-                    onBlur={() => setShowOriginal(false)}
-                  >
-                    Зажмите: исходник
-                  </button>
+                  {cropMode !== "free" && (
+                    <button
+                      type="button"
+                      onPointerDown={() => setShowOriginal(true)}
+                      onPointerUp={() => setShowOriginal(false)}
+                      onPointerCancel={() => setShowOriginal(false)}
+                      onPointerLeave={() => setShowOriginal(false)}
+                      onKeyDown={(event) => {
+                        if (event.key === " " || event.key === "Enter") {
+                          setShowOriginal(true);
+                        }
+                      }}
+                      onKeyUp={() => setShowOriginal(false)}
+                      onBlur={() => setShowOriginal(false)}
+                    >
+                      Зажмите: исходник
+                    </button>
+                  )}
                   {cropMode !== "none" && (
-                    <button type="button" onClick={resetFrame}>
+                    <button
+                      type="button"
+                      onClick={
+                        cropMode === "free" ? resetFreeFrame : resetFrame
+                      }
+                    >
                       По центру
                     </button>
                   )}
@@ -435,6 +528,7 @@ export default function Home() {
                       ["none", "Без обрезки"],
                       ["square", "Квадрат"],
                       ["round", "Круг"],
+                      ["free", "Свободная"],
                     ] as const
                   ).map(([mode, label]) => (
                     <button
@@ -444,6 +538,7 @@ export default function Home() {
                       aria-pressed={cropMode === mode}
                       onClick={() => {
                         if (imageSrc) setExporting(true);
+                        setCroppedArea(null);
                         setCropMode(mode);
                         resetFrame();
                       }}
@@ -451,13 +546,10 @@ export default function Home() {
                       {label}
                     </button>
                   ))}
-                  <button type="button" disabled>
-                    Свободная <small>скоро</small>
-                  </button>
                 </div>
               </div>
 
-              {cropMode !== "none" && (
+              {cropMode !== "none" && cropMode !== "free" && (
                 <label className="control">
                   <span>
                     Масштаб <b>{zoom.toFixed(1)}×</b>
@@ -505,7 +597,9 @@ export default function Home() {
                     <option key={size} value={size}>
                       {cropMode === "none"
                         ? `${size} px`
-                        : `${size} × ${size} px`}
+                        : `${getOutputSize(size, cropMode, croppedArea).width} × ${
+                            getOutputSize(size, cropMode, croppedArea).height
+                          } px`}
                     </option>
                   ))}
                 </select>
@@ -561,7 +655,7 @@ export default function Home() {
       <footer>
         <span>Локальная обработка</span>
         <span>Без регистрации</span>
-        <span>Без обрезки · квадрат · круг</span>
+        <span>Без обрезки · квадрат · круг · свободная</span>
       </footer>
     </main>
   );

@@ -196,6 +196,22 @@ h1 {
   font-size: clamp(36px, 5vw, 66px);
 }
 
+.workspace-actions {
+  display: flex;
+  gap: 18px;
+}
+
+.file-picker {
+  position: relative;
+}
+
+.file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
 .text-button,
 .editor-hint button {
   padding: 0;
@@ -401,6 +417,120 @@ h1 {
   gap: 18px;
 }
 
+.file-error-preview {
+  min-height: 530px;
+  padding: 32px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: var(--paper);
+  text-align: center;
+}
+
+.file-error-preview span {
+  color: #b62f1e;
+  font-size: 13px;
+}
+
+.file-error-preview button {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  cursor: pointer;
+}
+
+.file-strip {
+  padding: 12px 14px;
+  display: flex;
+  flex: none;
+  gap: 10px;
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+
+.file-thumb {
+  position: relative;
+  width: 84px;
+  height: 66px;
+  flex: 0 0 84px;
+  border: 2px solid transparent;
+  border-radius: 11px;
+}
+
+.file-thumb.is-active {
+  border-color: var(--accent);
+}
+
+.file-select {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: #24241f;
+  cursor: pointer;
+}
+
+.file-select img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.file-placeholder {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 24px;
+}
+
+.file-status {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  padding: 3px 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgb(23 23 19 / 82%);
+  color: white;
+  font-size: 8px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.file-status.is-ready {
+  background: rgb(78 138 39 / 90%);
+}
+
+.file-status.is-error {
+  background: rgb(182 47 30 / 92%);
+}
+
+.file-remove {
+  position: absolute;
+  z-index: 3;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
 .controls-card {
   padding: 22px;
   display: flex;
@@ -587,6 +717,17 @@ button:focus-visible,
   opacity: 0.55;
 }
 
+.secondary-download {
+  margin-top: 0;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+}
+
+.secondary-download span {
+  color: white;
+}
+
 .download span {
   display: grid;
   width: 30px;
@@ -755,10 +896,17 @@ footer {
 
   .workspace-title {
     align-items: start;
+    gap: 16px;
   }
 
   .workspace-title h1 {
     max-width: 260px;
+  }
+
+  .workspace-actions {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
   }
 
   .cropper-wrap {

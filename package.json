@@ -1,13 +1,16 @@
 {
   "name": "webp",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --test app/batch.test.ts"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "client-zip": "^2.5.0",
     "heic-to": "^1.2.0",
     "next": "^16.2.11",
     "react": "^19.0.0",

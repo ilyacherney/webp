@@ -9,10 +9,13 @@ import ReactCrop, {
 } from "react-image-crop";
 import {
   defaultCrop,
+  effectiveSettings,
   imageCountLabel,
   nextQueuedId,
   uniqueOutputNames,
+  type BatchSettings,
   type CropMode,
+  type SettingsOverrides,
 } from "./batch";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -43,6 +46,7 @@ type BatchItem = {
   status: ItemStatus;
   error: string;
   revision: number;
+  overrides: SettingsOverrides;
 };
 
 function formatBytes(bytes: number) {
@@ -156,6 +160,10 @@ export default function Home() {
   const [cropMode, setCropMode] = useState<CropMode>("none");
   const [quality, setQuality] = useState(82);
   const [outputSize, setOutputSize] = useState(1024);
+  const [settingsScope, setSettingsScope] = useState<"batch" | "item">(
+    "batch",
+  );
+  const [settingsChange, setSettingsChange] = useState(0);
   const [cropSize, setCropSize] = useState<Size | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -184,6 +192,13 @@ export default function Home() {
 
   const activeItem =
     items.find((item) => item.id === activeId) ?? items[0] ?? null;
+  const batchSettings = useMemo<BatchSettings>(
+    () => ({ cropMode, quality, outputSize }),
+    [cropMode, outputSize, quality],
+  );
+  const activeSettings = activeItem
+    ? effectiveSettings(batchSettings, activeItem.overrides)
+    : batchSettings;
   const validItems = useMemo(
     () => items.filter((item) => item.sourceUrl),
     [items],
@@ -199,23 +214,36 @@ export default function Home() {
   );
   const allReady =
     validItems.length > 0 && readyItems.length === validItems.length;
+  const itemScope = settingsScope === "item" && validItems.length > 1;
+  const visibleSettings = itemScope ? activeSettings : batchSettings;
+  const settingsDisabled =
+    !validItems.length || (itemScope && !activeItem?.sourceUrl);
+  const overriddenCount = validItems.filter(
+    (item) => Object.keys(item.overrides).length > 0,
+  ).length;
   const activeExporting =
     activeItem?.status === "waiting" ||
     activeItem?.status === "queued" ||
     activeItem?.status === "processing";
 
-  const markAllWaiting = useCallback(() => {
-    const revision = ++revisionRef.current;
-    setItems((current) =>
-      current.map((item) =>
-        item.sourceUrl
-          ? { ...item, status: "waiting", error: "", revision }
-          : item,
-      ),
-    );
-  }, []);
+  const markWaiting = useCallback(
+    (field: keyof BatchSettings) => {
+      const revision = ++revisionRef.current;
+      setItems((current) =>
+        current.map((item) =>
+          item.sourceUrl && item.overrides[field] === undefined
+            ? { ...item, status: "waiting", error: "", revision }
+            : item,
+        ),
+      );
+      setSettingsChange((current) => current + 1);
+    },
+    [],
+  );
 
   useEffect(() => {
+    if (!settingsChange) return;
+
     const timeout = window.setTimeout(
       () =>
         setItems((current) =>
@@ -226,7 +254,79 @@ export default function Home() {
       280,
     );
     return () => window.clearTimeout(timeout);
-  }, [outputSize, quality]);
+  }, [settingsChange]);
+
+  const resetItemOverride = useCallback(
+    (field: keyof BatchSettings) => {
+      if (!activeItem?.sourceUrl) return;
+      const revision = ++revisionRef.current;
+      setItems((current) =>
+        current.map((item) => {
+          if (item.id !== activeItem.id) return item;
+          const overrides = { ...item.overrides };
+          delete overrides[field];
+          const nextMode =
+            field === "cropMode"
+              ? cropMode
+              : effectiveSettings(batchSettings, overrides).cropMode;
+
+          return {
+            ...item,
+            overrides,
+            croppedArea:
+              field === "cropMode"
+                ? defaultCrop(item.width, item.height, nextMode)
+                : item.croppedArea,
+            crop: field === "cropMode" ? { x: 0, y: 0 } : item.crop,
+            zoom: field === "cropMode" ? 1 : item.zoom,
+            freeCrop:
+              field === "cropMode"
+                ? { ...DEFAULT_FREE_CROP }
+                : item.freeCrop,
+            status: field === "cropMode" ? "queued" : "waiting",
+            error: "",
+            revision,
+          };
+        }),
+      );
+      if (field !== "cropMode") {
+        setSettingsChange((current) => current + 1);
+      }
+    },
+    [activeItem, batchSettings, cropMode],
+  );
+
+  const resetAllItemOverrides = useCallback(() => {
+    if (!activeItem?.sourceUrl) return;
+    const revision = ++revisionRef.current;
+    setItems((current) =>
+      current.map((item) =>
+        item.id === activeItem.id
+          ? {
+              ...item,
+              overrides: {},
+              crop:
+                item.overrides.cropMode !== undefined
+                  ? { x: 0, y: 0 }
+                  : item.crop,
+              zoom:
+                item.overrides.cropMode !== undefined ? 1 : item.zoom,
+              freeCrop:
+                item.overrides.cropMode !== undefined
+                  ? { ...DEFAULT_FREE_CROP }
+                  : item.freeCrop,
+              croppedArea:
+                item.overrides.cropMode !== undefined
+                  ? defaultCrop(item.width, item.height, cropMode)
+                  : item.croppedArea,
+              status: "queued",
+              error: "",
+              revision,
+            }
+          : item,
+      ),
+    );
+  }, [activeItem, cropMode]);
 
   const addFiles = useCallback(
     async (files: readonly File[]) => {
@@ -262,6 +362,7 @@ export default function Home() {
           outputBlob: null,
           outputUrl: "",
           revision,
+          overrides: {},
         };
 
         if (file.size > MAX_FILE_SIZE || !supported) {
@@ -345,6 +446,7 @@ export default function Home() {
     const revision = item.revision;
     const sourceUrl = item.sourceUrl;
     const area = item.croppedArea;
+    const settings = effectiveSettings(batchSettings, item.overrides);
     setProcessingId(nextId);
     setItems((current) =>
       current.map((candidate) =>
@@ -357,9 +459,9 @@ export default function Home() {
     void renderWebp(
       sourceUrl,
       area,
-      outputSize,
-      quality / 100,
-      cropMode,
+      settings.outputSize,
+      settings.quality / 100,
+      settings.cropMode,
     )
       .then((blob) => {
         const nextUrl = URL.createObjectURL(blob);
@@ -407,7 +509,7 @@ export default function Home() {
       .finally(() => {
         setProcessingId((current) => (current === nextId ? null : current));
       });
-  }, [activeId, cropMode, items, outputSize, processingId, quality]);
+  }, [activeId, batchSettings, items, processingId]);
 
   const updateActive = useCallback(
     (change: Partial<BatchItem>) => {
@@ -488,7 +590,11 @@ export default function Home() {
               crop: { x: 0, y: 0 },
               zoom: 1,
               freeCrop: { ...DEFAULT_FREE_CROP },
-              croppedArea: defaultCrop(item.width, item.height, cropMode),
+              croppedArea: defaultCrop(
+                item.width,
+                item.height,
+                activeSettings.cropMode,
+              ),
               status: "queued",
               error: "",
               revision,
@@ -496,17 +602,25 @@ export default function Home() {
           : item,
       ),
     );
-  }, [activeItem, cropMode]);
+  }, [activeItem, activeSettings.cropMode]);
 
-  const changeCropMode = useCallback((mode: CropMode) => {
-    const revision = ++revisionRef.current;
-    setCropMode(mode);
-    setCropSize(null);
-    setItems((current) =>
-      current.map((item) =>
-        item.sourceUrl
-          ? {
+  const changeVisibleCropMode = useCallback(
+    (mode: CropMode) => {
+      if (mode === visibleSettings.cropMode) return;
+      const revision = ++revisionRef.current;
+      setCropSize(null);
+
+      if (itemScope && activeItem?.sourceUrl) {
+        setItems((current) =>
+          current.map((item) => {
+            if (item.id !== activeItem.id) return item;
+            const overrides = { ...item.overrides };
+            if (mode === cropMode) delete overrides.cropMode;
+            else overrides.cropMode = mode;
+
+            return {
               ...item,
+              overrides,
               crop: { x: 0, y: 0 },
               zoom: 1,
               freeCrop: { ...DEFAULT_FREE_CROP },
@@ -514,11 +628,90 @@ export default function Home() {
               status: "queued",
               error: "",
               revision,
-            }
-          : item,
-      ),
-    );
-  }, []);
+            };
+          }),
+        );
+        return;
+      }
+
+      setCropMode(mode);
+      setItems((current) =>
+        current.map((item) =>
+          item.sourceUrl && item.overrides.cropMode === undefined
+            ? {
+                ...item,
+                crop: { x: 0, y: 0 },
+                zoom: 1,
+                freeCrop: { ...DEFAULT_FREE_CROP },
+                croppedArea: defaultCrop(item.width, item.height, mode),
+                status: "queued",
+                error: "",
+                revision,
+              }
+            : item,
+        ),
+      );
+    },
+    [activeItem, cropMode, itemScope, visibleSettings.cropMode],
+  );
+
+  const changeVisibleQuality = useCallback(
+    (value: number) => {
+      if (itemScope && activeItem?.sourceUrl) {
+        const revision = ++revisionRef.current;
+        setItems((current) =>
+          current.map((item) => {
+            if (item.id !== activeItem.id) return item;
+            const overrides = { ...item.overrides };
+            if (value === quality) delete overrides.quality;
+            else overrides.quality = value;
+            return {
+              ...item,
+              overrides,
+              status: "waiting",
+              error: "",
+              revision,
+            };
+          }),
+        );
+        setSettingsChange((current) => current + 1);
+        return;
+      }
+
+      setQuality(value);
+      markWaiting("quality");
+    },
+    [activeItem, itemScope, markWaiting, quality],
+  );
+
+  const changeVisibleOutputSize = useCallback(
+    (value: number) => {
+      if (itemScope && activeItem?.sourceUrl) {
+        const revision = ++revisionRef.current;
+        setItems((current) =>
+          current.map((item) => {
+            if (item.id !== activeItem.id) return item;
+            const overrides = { ...item.overrides };
+            if (value === outputSize) delete overrides.outputSize;
+            else overrides.outputSize = value;
+            return {
+              ...item,
+              overrides,
+              status: "waiting",
+              error: "",
+              revision,
+            };
+          }),
+        );
+        setSettingsChange((current) => current + 1);
+        return;
+      }
+
+      setOutputSize(value);
+      markWaiting("outputSize");
+    },
+    [activeItem, itemScope, markWaiting, outputSize],
+  );
 
   const removeItem = useCallback((id: string) => {
     const removed = itemsRef.current.find((item) => item.id === id);
@@ -548,16 +741,20 @@ export default function Home() {
     setActiveId(null);
     setError("");
     setProcessingId(null);
+    setSettingsScope("batch");
   }, []);
 
   const downloadCurrent = useCallback(() => {
     if (!activeItem?.outputUrl || activeItem.status !== "ready") return;
     const link = document.createElement("a");
     link.href = activeItem.outputUrl;
-    link.download = outputName(activeItem.file.name, cropMode);
+    link.download = outputName(
+      activeItem.file.name,
+      effectiveSettings(batchSettings, activeItem.overrides).cropMode,
+    );
     link.click();
     link.remove();
-  }, [activeItem, cropMode]);
+  }, [activeItem, batchSettings]);
 
   const downloadAll = useCallback(async () => {
     const downloadable = itemsRef.current.filter(
@@ -572,7 +769,12 @@ export default function Home() {
     try {
       const { downloadZip } = await import("client-zip");
       const names = uniqueOutputNames(
-        downloadable.map((item) => outputName(item.file.name, cropMode)),
+        downloadable.map((item) =>
+          outputName(
+            item.file.name,
+            effectiveSettings(batchSettings, item.overrides).cropMode,
+          ),
+        ),
       );
       const blob = await downloadZip(
         downloadable.map((item, index) => ({
@@ -593,7 +795,7 @@ export default function Home() {
     } finally {
       setDownloadingZip(false);
     }
-  }, [cropMode, validItems.length]);
+  }, [batchSettings, validItems.length]);
 
   return (
     <main>
@@ -679,10 +881,10 @@ export default function Home() {
               {activeItem?.sourceUrl ? (
                 <div
                   className={`cropper-wrap ${
-                    cropMode === "none" ? "is-uncropped" : ""
+                    activeSettings.cropMode === "none" ? "is-uncropped" : ""
                   }`}
                 >
-                  {cropMode === "none" ? (
+                  {activeSettings.cropMode === "none" ? (
                     <div className="uncropped-preview">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -698,9 +900,9 @@ export default function Home() {
                       {activeItem.outputUrl &&
                         activeItem.status === "ready" &&
                         !showOriginal &&
-                        <span>WebP · {quality}%</span>}
+                        <span>WebP · {activeSettings.quality}%</span>}
                     </div>
-                  ) : cropMode === "free" ? (
+                  ) : activeSettings.cropMode === "free" ? (
                     <div className="free-crop-preview">
                       <ReactCrop
                         crop={activeItem.freeCrop}
@@ -728,7 +930,7 @@ export default function Home() {
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={activeItem.outputUrl} alt="" />
-                              <span>WebP · {quality}%</span>
+                              <span>WebP · {activeSettings.quality}%</span>
                             </div>
                           ) : null
                         }
@@ -747,12 +949,14 @@ export default function Home() {
                   ) : (
                     <>
                       <Cropper
-                        key={`${activeItem.id}-${cropMode}`}
+                        key={`${activeItem.id}-${activeSettings.cropMode}`}
                         image={activeItem.sourceUrl}
                         crop={activeItem.crop}
                         zoom={activeItem.zoom}
                         aspect={1}
-                        cropShape={cropMode === "round" ? "round" : "rect"}
+                        cropShape={
+                          activeSettings.cropMode === "round" ? "round" : "rect"
+                        }
                         showGrid={false}
                         onCropChange={(crop) => updateActive({ crop })}
                         onZoomChange={(zoom) => updateActive({ zoom })}
@@ -766,7 +970,9 @@ export default function Home() {
                         cropSize && (
                         <div
                           className={`webp-overlay ${
-                            cropMode === "round" ? "is-round" : ""
+                            activeSettings.cropMode === "round"
+                              ? "is-round"
+                              : ""
                           } ${
                             interacting || showOriginal || activeExporting
                               ? "is-hidden"
@@ -780,7 +986,7 @@ export default function Home() {
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={activeItem.outputUrl} alt="" />
-                          <span>WebP · {quality}%</span>
+                          <span>WebP · {activeSettings.quality}%</span>
                         </div>
                         )}
                     </>
@@ -805,12 +1011,14 @@ export default function Home() {
                     ? "Обновляем WebP…"
                     : activeItem?.status === "error"
                       ? activeItem.error
-                      : cropMode === "free"
+                      : activeSettings.cropMode === "free"
                         ? "Тяните углы или стороны рамки"
-                        : cropMode === "none"
+                        : activeSettings.cropMode === "none"
                           ? "Изображение экспортируется целиком"
                           : `Перетаскивайте фото внутри ${
-                              cropMode === "round" ? "круга" : "квадрата"
+                              activeSettings.cropMode === "round"
+                                ? "круга"
+                                : "квадрата"
                             }`}
                 </span>
                 {activeItem?.sourceUrl && (
@@ -831,7 +1039,7 @@ export default function Home() {
                     >
                       Зажмите: исходник
                     </button>
-                    {cropMode !== "none" && (
+                    {activeSettings.cropMode !== "none" && (
                       <button type="button" onClick={resetActiveFrame}>
                         По центру
                       </button>
@@ -871,6 +1079,13 @@ export default function Home() {
                           {statusLabel(item)}
                         </span>
                       </button>
+                      {Object.keys(item.overrides).length > 0 && (
+                        <span
+                          className="file-override"
+                          title="Индивидуальные настройки"
+                          aria-label="Индивидуальные настройки"
+                        />
+                      )}
                       <button
                         className="file-remove"
                         type="button"
@@ -899,10 +1114,67 @@ export default function Home() {
               <b>{activeItem ? formatBytes(activeItem.file.size) : "—"}</b>
             </div>
 
+            {validItems.length > 1 && (
+              <div className="settings-scope">
+                <span>Настройки</span>
+                <div role="group" aria-label="Область настроек">
+                  <button
+                    className={!itemScope ? "is-active" : ""}
+                    type="button"
+                    aria-pressed={!itemScope}
+                    onClick={() => setSettingsScope("batch")}
+                  >
+                    Вся пачка · {validItems.length}
+                  </button>
+                  <button
+                    className={itemScope ? "is-active" : ""}
+                    type="button"
+                    aria-pressed={itemScope}
+                    disabled={!activeItem?.sourceUrl}
+                    onClick={() => setSettingsScope("item")}
+                  >
+                    Это фото
+                  </button>
+                </div>
+                {!itemScope && overriddenCount > 0 && (
+                  <small>Отдельно настроено: {overriddenCount}</small>
+                )}
+              </div>
+            )}
+
+            {itemScope && activeItem && (
+              <div className="individual-context">
+                <div>
+                  <span>Только для этого фото</span>
+                  <strong title={activeItem.file.name}>
+                    {activeItem.file.name}
+                  </strong>
+                </div>
+                {Object.keys(activeItem.overrides).length > 0 && (
+                  <button type="button" onClick={resetAllItemOverrides}>
+                    Сбросить всё
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="mode-control">
               <span>
                 Форма
-                {validItems.length > 1 && <b>для всех</b>}
+                {itemScope ? (
+                  activeItem?.overrides.cropMode !== undefined && (
+                    <button
+                      className="inherit-button"
+                      type="button"
+                      aria-label="Вернуть общую форму"
+                      onClick={() => resetItemOverride("cropMode")}
+                    >
+                      Вернуть общую
+                    </button>
+                  )
+                ) : validItems.length > 1 ? (
+                  <b>для пачки</b>
+                ) : null}
               </span>
               <div className="mode-tabs" role="group" aria-label="Форма WebP">
                 {(
@@ -915,11 +1187,13 @@ export default function Home() {
                 ).map(([mode, label]) => (
                   <button
                     key={mode}
-                    className={cropMode === mode ? "is-active" : ""}
+                    className={
+                      visibleSettings.cropMode === mode ? "is-active" : ""
+                    }
                     type="button"
-                    aria-pressed={cropMode === mode}
-                    disabled={!validItems.length}
-                    onClick={() => changeCropMode(mode)}
+                    aria-pressed={visibleSettings.cropMode === mode}
+                    disabled={settingsDisabled}
+                    onClick={() => changeVisibleCropMode(mode)}
                   >
                     {label}
                   </button>
@@ -927,10 +1201,12 @@ export default function Home() {
               </div>
             </div>
 
-            {cropMode !== "none" && cropMode !== "free" && (
+            {activeSettings.cropMode !== "none" &&
+              activeSettings.cropMode !== "free" && (
               <label className="control">
                 <span>
-                  Масштаб <b>{activeItem?.zoom.toFixed(1) ?? "1.0"}×</b>
+                  Масштаб кадра{" "}
+                  <b>{activeItem?.zoom.toFixed(1) ?? "1.0"}×</b>
                 </span>
                 <input
                   type="range"
@@ -946,52 +1222,87 @@ export default function Home() {
               </label>
             )}
 
-            <label className="control">
+            <div className="control">
               <span>
-                Качество WebP <b>{quality}%</b>
+                Качество WebP
+                {itemScope &&
+                activeItem?.overrides.quality !== undefined ? (
+                  <button
+                    className="inherit-button"
+                    type="button"
+                    aria-label="Вернуть общее качество"
+                    onClick={() => resetItemOverride("quality")}
+                  >
+                    Вернуть общее
+                  </button>
+                ) : (
+                  <b>{visibleSettings.quality}%</b>
+                )}
               </span>
               <input
                 type="range"
+                aria-label="Качество WebP"
                 min="35"
                 max="100"
                 step="1"
-                disabled={!validItems.length}
-                value={quality}
-                onChange={(event) => {
-                  setQuality(Number(event.target.value));
-                  markAllWaiting();
-                }}
+                disabled={settingsDisabled}
+                value={visibleSettings.quality}
+                onChange={(event) =>
+                  changeVisibleQuality(Number(event.target.value))
+                }
               />
-            </label>
+              {itemScope && activeItem?.overrides.quality !== undefined && (
+                <small>{visibleSettings.quality}% · индивидуально</small>
+              )}
+            </div>
 
-            <label className="control">
+            <div className="control">
               <span>
-                {cropMode === "none" ? "Максимальная сторона" : "Размер"}
-                {validItems.length > 1 && <b>для всех</b>}
+                {visibleSettings.cropMode === "none"
+                  ? "Максимальная сторона"
+                  : "Размер"}
+                {itemScope ? (
+                  activeItem?.overrides.outputSize !== undefined && (
+                    <button
+                      className="inherit-button"
+                      type="button"
+                      aria-label="Вернуть общий размер"
+                      onClick={() => resetItemOverride("outputSize")}
+                    >
+                      Вернуть общий
+                    </button>
+                  )
+                ) : validItems.length > 1 ? (
+                  <b>для пачки</b>
+                ) : null}
               </span>
               <select
-                disabled={!validItems.length}
-                value={outputSize}
-                onChange={(event) => {
-                  setOutputSize(Number(event.target.value));
-                  markAllWaiting();
-                }}
+                aria-label={
+                  visibleSettings.cropMode === "none"
+                    ? "Максимальная сторона"
+                    : "Размер"
+                }
+                disabled={settingsDisabled}
+                value={visibleSettings.outputSize}
+                onChange={(event) =>
+                  changeVisibleOutputSize(Number(event.target.value))
+                }
               >
                 {OUTPUT_SIZES.map((size) => (
                   <option key={size} value={size}>
-                    {cropMode === "none"
+                    {visibleSettings.cropMode === "none"
                       ? `${size} px`
-                      : `${getOutputSize(size, cropMode, activeItem?.croppedArea ?? null).width} × ${
+                      : `${getOutputSize(size, visibleSettings.cropMode, activeItem?.croppedArea ?? null).width} × ${
                           getOutputSize(
                             size,
-                            cropMode,
+                            visibleSettings.cropMode,
                             activeItem?.croppedArea ?? null,
                           ).height
                         } px`}
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
             <div className="result">
               <div>

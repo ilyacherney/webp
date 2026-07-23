@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   defaultCrop,
+  effectiveSettings,
   imageCountLabel,
   nextQueuedId,
   uniqueOutputNames,
@@ -45,5 +46,12 @@ test("batch helpers keep crops centered, names unique, and active work first", (
       "21 изображение",
       "24 изображения",
     ],
+  );
+  assert.deepEqual(
+    effectiveSettings(
+      { cropMode: "none", quality: 82, outputSize: 1024 },
+      { cropMode: "square", quality: 92 },
+    ),
+    { cropMode: "square", quality: 92, outputSize: 1024 },
   );
 });

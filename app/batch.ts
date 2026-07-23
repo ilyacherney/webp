@@ -1,5 +1,13 @@
 export type CropMode = "none" | "square" | "round" | "free";
 
+export type BatchSettings = {
+  cropMode: CropMode;
+  quality: number;
+  outputSize: number;
+};
+
+export type SettingsOverrides = Partial<BatchSettings>;
+
 export type ImageArea = {
   x: number;
   y: number;
@@ -79,4 +87,11 @@ export function imageCountLabel(count: number) {
           : "изображений";
 
   return `${count} ${word}`;
+}
+
+export function effectiveSettings(
+  defaults: BatchSettings,
+  overrides: SettingsOverrides,
+): BatchSettings {
+  return { ...defaults, ...overrides };
 }

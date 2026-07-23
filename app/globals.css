@@ -378,6 +378,7 @@ h1 {
   min-height: 474px;
   display: grid;
   place-items: center;
+  overflow: hidden;
 }
 
 .uncropped-preview img {
@@ -531,6 +532,18 @@ h1 {
   line-height: 1;
 }
 
+.file-override {
+  position: absolute;
+  z-index: 3;
+  top: -5px;
+  left: -5px;
+  width: 13px;
+  height: 13px;
+  border: 3px solid var(--card);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 .controls-card {
   padding: 22px;
   display: flex;
@@ -571,6 +584,92 @@ h1 {
 .file-row > b {
   flex: none;
   font-size: 13px;
+}
+
+.settings-scope {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-scope > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-scope > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.settings-scope button {
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.settings-scope button.is-active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: white;
+}
+
+.settings-scope button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-scope small,
+.control > small {
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.individual-context {
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 12px;
+  background: rgb(255 93 54 / 9%);
+}
+
+.individual-context div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.individual-context span {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.individual-context strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.individual-context button,
+.inherit-button {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .control {
@@ -820,7 +919,12 @@ footer {
   }
 
   .uncropped-preview img {
-    max-height: 100%;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
   }
 
   .editor-hint {
